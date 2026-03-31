@@ -1,15 +1,14 @@
 {
   "name": "openclaw-gateway",
   "version": "1.0.0",
-  "description": "OpenClaw AI Gateway",
   "main": "start.js",
   "scripts": {
     "start": "node start.js"
   },
+  "dependencies": {
+    "openclaw": "^0.1.0"
+  },
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {
-    "openclaw": "latest"
   }
 }
