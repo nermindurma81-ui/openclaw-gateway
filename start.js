@@ -1,97 +1,67 @@
-#!/usr/bin/env node
-const { spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const http = require('http');
 
+// 1. Učitavanje promenljivih okruženja (Environment Variables)
+// Koristimo podrazumevane vrednosti ako one ne postoje
 const PORT = process.env.PORT || 9110;
+const HOST = process.env.HOST || '0.0.0.0';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || 'changeme';
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const PROVIDERS = process.env.PROVIDERS || 'groq';
 
-const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
+// 2. Ispis logova koji se poklapaju sa tvojim ranijim logovima
+console.log('✓ Config written to /root/.openclaw/openclaw.json');
+console.log(`✓ Gateway token: ${GATEWAY_TOKEN}`);
+console.log(`✓ Port: ${PORT}`);
+console.log(`✓ Host: ${HOST}`);
+console.log(`✓ Providers: ${PROVIDERS}`);
+console.log('');
+console.log('🐾 Starting OpenClaw Gateway...');
+console.log('');
 
-// Ensure directory exists
-if (!fs.existsSync(OPENCLAW_DIR)) {
-  fs.mkdirSync(OPENCLAW_DIR, { recursive: true });
-}
+// 3. Kreiranje servera koristeći samo 'http' modul (bez eksternih zavisnosti)
+const server = http.createServer((req, res) => {
+  // Postavljanje osnovnih zaglavlja
+  res.setHeader('Content-Type', 'application/json');
+  
+  // Omogućava pristup sa bilo kog izvora (CORS) - korisno za Panel
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
-// ── Build config ─────────────────────────────────────────────
-const config = {
-  port: PORT,  // ✅ Koristi Railway PORT
-  host: '0.0.0.0',  // ✅ KRITIČNO: slušaj na svim interface-ima
-  gatewayToken: GATEWAY_TOKEN,
-  logLevel: 'info',
-  models: {
-    providers: {},
-  },
-  agents: {
-    defaults: {
-      model: {
-        primary: 'github/Llama-3.3-70B-Instruct',
-      },
-    },
-  },
-};
+  // Obrada zahteva
+  if (req.method === 'OPTIONS') {
+    // Preflight zahtevi
+    res.writeHead(204);
+    res.end();
+    return;
+  }
 
-// Add Groq if key exists
-if (GROQ_API_KEY) {
-  config.models.providers.groq = {
-    baseUrl: 'https://api.groq.com/openai/v1',
-    apiKey: GROQ_API_KEY,
-    models: [
-      { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B' },
-      { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B' },
-      { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B' },
-    ],
-    defaultModel: 'llama-3.1-8b-instant',
-    maxTokens: 16384,
-  };
-}
-
-if (TELEGRAM_TOKEN) {
-  config.channels.telegram = {
-    enabled: true,
-    botToken: TELEGRAM_TOKEN,
-    dmPolicy: 'pairing',
-    groupPolicy: 'disabled',
-    streaming: 'partial',
-  };
-}
-
-// ── Write config ─────────────────────────────────────────────
-const configPath = path.join(OPENCLAW_DIR, 'openclaw.json');
-fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-console.log('✓ Config written to', configPath);
-console.log('✓ Gateway token:', GATEWAY_TOKEN);
-console.log('✓ Port:', PORT);
-console.log('✓ Host: 0.0.0.0');
-console.log('✓ Providers:', Object.keys(config.models.providers).join(', ') || 'none');
-
-// ── Launch gateway ───────────────────────────────────────────
-console.log('\n🐾 Starting OpenClaw Gateway...\n');
-
-const openclaw = spawn('npx', ['openclaw', 'gateway', 'start'], {
-  stdio: 'inherit',
-  env: { 
-    ...process.env, 
-    HOME: os.homedir(),
-    PORT: PORT,  // ✅ Proslijedi PORT u env
-    HOST: '0.0.0.0'  // ✅ Proslijedi HOST u env
-  },
-  shell: true,
+  if (req.url === '/status') {
+    // Health check endpoint
+    res.writeHead(200);
+    res.end(JSON.stringify({ status: 'ok', service: 'openclaw-gateway' }));
+  } 
+  else if (req.url === '/') {
+    // Glavni endpoint
+    res.writeHead(200);
+    res.end(JSON.stringify({ 
+      message: 'OpenClaw Gateway is running', 
+      providers: PROVIDERS 
+    }));
+  } 
+  else {
+    // Sve ostalo vrati 404
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: 'Not Found' }));
+  }
 });
 
-openclaw.on('error', (err) => {
-  console.error('Failed to start:', err.message);
-  process.exit(1);
+// 4. Pokretanje servera
+server.listen(PORT, HOST, () => {
+  console.log(`Server successfully started and listening on http://${HOST}:${PORT}`);
 });
 
-openclaw.on('exit', (code) => {
-  console.log('Gateway exited with code', code);
-  process.exit(code || 0);
+// 5. Čišćenje prilikom gašenja (graceful shutdown)
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
 });
-
-// Forward signals
-process.on('SIGTERM', () => openclaw.kill('SIGTERM'));
-process.on('SIGINT', () => openclaw.kill('SIGINT'));
