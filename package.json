@@ -5,9 +5,7 @@
   "scripts": {
     "start": "node start.js"
   },
-  "dependencies": {
-    "openclaw": "^0.1.0"
-  },
+  "dependencies": {},
   "engines": {
     "node": ">=18"
   }
